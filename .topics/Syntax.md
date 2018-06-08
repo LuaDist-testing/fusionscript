@@ -11,8 +11,8 @@ and know the basic syntax of Lua, C, and Python.
 
 ## Literals
 
-There are five literals - excluding functions - in FusionScript: Numbers,
-strings, booleans, `nil`, and tables.
+There are seven literals - excluding functions - in FusionScript: Numbers,
+strings, booleans, `nil`, tables, ranges, and patterns.
 
 ### Numbers
 
@@ -69,6 +69,32 @@ expression; or a variable name, `=`, and an expression.
     [true] = 7,
     asdf = "peanut butter"
 }
+```
+
+### Ranges
+
+Ranges are a quick way to make an iterator, like a numeric `for` loop. They
+don't exist in Lua and require the `using itr;` statement somewhere before the
+range is constructed to be used. The syntax for ranges is simple: a _start_, a
+_stop_, and optionally a _step_ separated with two semicolons.
+
+```fuse
+using itr;
+for (i in 1::10::2)
+    print(i); -- odds from 1 to 10
+```
+
+### Patterns
+
+Patterns use the LPeg `re` module to provide a quick way to make LPeg patterns
+without having to manually type out `re.compile()`. They're not like "normal"
+regex (see [here](www.inf.puc-rio.br/~roberto/lpeg/re.html) for more info on
+why) but still provide a powerful interface to matching text. Similar to the
+range syntax, patterns require a `using re;` statement.
+
+```fuse
+using re;
+print(/{[A-Za-z]+}/:match("test"))
 ```
 
 ## Expressions
@@ -137,6 +163,12 @@ index of a table
   - **Note:** Numbers will be converted to a string if either operator is
   a string.
 
+### Ternary Expression
+
+The `?:` operator is the only operator that can currently be used in with a
+ternary expression; it works like it would in C but requires a `using ternary;`
+statement before the line.
+
 ## Names
 
 Names are how you access a variable. You can use any name that starts with an
@@ -181,6 +213,7 @@ can be used with the [`class`](#class-definitions) keyword.
 the iterators `map` and `filter` as well as functions such as `reduce`.
 - `using itr;`: Does the same thing as `using fnl;` but with the `iterable`
 library (localized as `itr`).
+- `using *;`: Load all available syntax extensions.
 
 ### Function Calls
 
@@ -434,7 +467,7 @@ for (i in madeIntoACoroutine())
 Class definitions are a specific kind of statement that is like a table but
 uses a different form of assignment. Assignment using names can be done like
 traditional tables but function declaration can also be done. Classes start
-with the word "new", optionally a name for the class, optionally "extends"
+with the word "class", optionally a name for the class, optionally "extends"
 followed by a class to extend, and an opening curly bracket.
 
 While inside of a class, methods can make use of the fat arrow operator to
@@ -444,7 +477,7 @@ accessed in the `print()` statement.
 
 ```fuse
 {Object} = require("core");
-new ExampleClass extends Object {
+class ExampleClass extends Object {
     x = "hello";
     y = "world";
     print()=> print("%s %s" % {@x, @y})
@@ -461,7 +494,7 @@ line in the file the class was defined on. There's also `@__tostring` for
 most class instances (where `__tostring()` is not defined).
 
 ```fuse
-new ExampleClass extends Object {
+class ExampleClass extends Object {
     print()=>
         print("<%s>() => %s" % {ExampleClass, @})
 }
@@ -474,11 +507,45 @@ for which to call the method. If there is only one instance of the method, it
 is not required to use this format to call the method.
 
 ```fuse
-new ExampleClass extends Object {
+class ExampleClass extends Object {
     example_method()=> print("hi!")
 }
-new ExampleClassToo extends ExampleClass {
+class ExampleClassToo extends ExampleClass {
     example_method()=> print("hello!");
 }
 (ExampleClassToo()):example_method<ExampleClass>(); -- hi!
+```
+
+### Interfaces
+
+Interfaces are a basic extension onto classes that essentially ensure that a
+class has a certain method or value. If the class is not generated with any
+value at all of the names in the interface, the class will fail to generate and
+an error will be thrown.
+
+```fuse
+lfs = require("lfs");
+
+interface IScope { descope; }
+
+class UseDir implements IScope {
+    __init(dir)=> {
+        @old_dir = assert(os.getenv("PWD"), "missing directory");
+        lfs.chdir(dir)
+    }
+    close()=> lfs.chdir(@old_dir);
+}
+```
+
+Classes extended upon another class will still be able to use the method of the
+previous class when using an interface. The methods do not have to be added
+again to avoid errors.
+
+```fuse
+class UseDirAndPrint extends UseDir implements IScope {
+    __init(dir)=> {
+        self:__init<UseDir>(self); -- initialize in extended class
+        print(dir);
+    }
+}
 ```

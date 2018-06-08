@@ -13,7 +13,8 @@ description = {
 
 dependencies = {
 	"lua >= 5.1",
-	"lpeg >= 1.0"
+	"lpeg >= 1.0",
+	"luafilesystem"
 }
 
 local default = "source"
@@ -21,16 +22,18 @@ local default = "source"
 build = {
 	type = "builtin",
 	modules = {
-		["fusion.stdlib.functional"] = "fusion/stdlib/functional.lua",
-		["fusion.stdlib.table"] = "fusion/stdlib/table.lua",
-		["fusion.stdlib.iterable"] = "fusion/stdlib/iterable.lua",
-		["fusion.stdlib.class"] = "fusion/stdlib/class.lua",
-		["fusion.core.parsers.source"] = "fusion/core/parsers/source.lua",
-		["fusion.core.lexer"] = "fusion/core/lexer.lua"
+		["fusion.stdlib.functional"] = "fusion/stdlib/functional.lua";
+		["fusion.stdlib.table"] = "fusion/stdlib/table.lua";
+		["fusion.stdlib.iterable"] = "fusion/stdlib/iterable.lua";
+		["fusion.stdlib.ternary"] = "fusion/stdlib/ternary.lua";
+		["fusion.stdlib.class"] = "fusion/stdlib/class.lua";
+		["fusion.core.parsers.source"] = "fusion/core/parsers/source.lua";
+		["fusion.core.lexer"] = "fusion/core/lexer.lua";
 	},
 	install = {
 		bin = {
 			["fusion-ast"] = "bin/util/ast.lua";
+			["fusion-pkg"] = "bin/util/pkg.lua";
 			["fusion"] = ("bin/interpreter/%s.lua"):format(default);
 			["fusionc"] = ("bin/compiler/%s.lua"):format(default);
 			["fusion-source"] = "bin/interpreter//source.lua";

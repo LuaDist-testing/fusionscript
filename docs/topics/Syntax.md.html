@@ -43,9 +43,9 @@
 </ul>
 
 
-<h2>Manual</h2>
-<ul class="nowrap">
-  <li><a href="../manual/FusionScript.md.html">FusionScript</a></li>
+<h2>Topics</h2>
+<ul class="">
+  <li><a href="../topics/FusionScript.md.html">FusionScript</a></li>
   <li><strong>Syntax</strong></li>
 </ul>
 <h2>Modules</h2>
@@ -55,12 +55,14 @@
   <li><a href="../modules/fusion.stdlib.class.html">fusion.stdlib.class</a></li>
   <li><a href="../modules/fusion.stdlib.functional.html">fusion.stdlib.functional</a></li>
   <li><a href="../modules/fusion.stdlib.iterative.html">fusion.stdlib.iterative</a></li>
+  <li><a href="../modules/fusion.stdlib.ternary.html">fusion.stdlib.ternary</a></li>
 </ul>
 <h2>Programs</h2>
 <ul class="nowrap">
   <li><a href="../programs/fusionc-source.html">fusionc-source</a></li>
   <li><a href="../programs/fusion-source.html">fusion-source</a></li>
   <li><a href="../programs/fusion-ast.html">fusion-ast</a></li>
+  <li><a href="../programs/fusion-pkg.html">fusion-pkg</a></li>
 </ul>
 
 </div>
@@ -82,8 +84,8 @@ and know the basic syntax of Lua, C, and Python.</p>
 <p><a name="Literals"></a></p>
 <h2>Literals</h2>
 
-<p>There are five literals - excluding functions - in FusionScript: Numbers,
-strings, booleans, <code>nil</code>, and tables.</p>
+<p>There are seven literals - excluding functions - in FusionScript: Numbers,
+strings, booleans, <code>nil</code>, tables, ranges, and patterns.</p>
 
 <h3>Numbers</h3>
 
@@ -141,6 +143,36 @@ expression; or a variable name, <code>=</code>, and an expression.</p>
     [<span class="keyword">true</span>] = <span class="number">7</span>,
     asdf = <span class="string">"peanut butter"</span>
 }
+</pre>
+
+
+<h3>Ranges</h3>
+
+<p>Ranges are a quick way to make an iterator, like a numeric <code>for</code> loop. They
+don't exist in Lua and require the <code>using itr;</code> statement somewhere before the
+range is constructed to be used. The syntax for ranges is simple: a <em>start</em>, a
+<em>stop</em>, and optionally a <em>step</em> separated with two semicolons.</p>
+
+
+<pre>
+using itr;
+<span class="keyword">for</span> (i <span class="keyword">in</span> <span class="number">1</span>::<span class="number">10</span>::<span class="number">2</span>)
+    <span class="global">print</span>(i); <span class="comment">-- odds from 1 to 10</span>
+</pre>
+
+
+<h3>Patterns</h3>
+
+<p>Patterns use the LPeg <code>re</code> module to provide a quick way to make LPeg patterns
+without having to manually type out <code>re.compile()</code>. They're not like "normal"
+regex (see <a href="www.inf.puc-rio.br/~roberto/lpeg/re.html">here</a> for more info on
+why) but still provide a powerful interface to matching text. Similar to the
+range syntax, patterns require a <code>using re;</code> statement.</p>
+
+
+<pre>
+using re;
+<span class="global">print</span>(/{[A-Za-z]+}/:match(<span class="string">"test"</span>))
 </pre>
 
 
@@ -225,6 +257,12 @@ evaluating and therefore return an integer.</p>
     a string.</li>
 </ul>
 
+<h3>Ternary Expression</h3>
+
+<p>The <code>?:</code> operator is the only operator that can currently be used in with a
+ternary expression; it works like it would in C but requires a <code>using ternary;</code>
+statement before the line.</p>
+
 <p><a name="Names"></a></p>
 <h2>Names</h2>
 
@@ -273,6 +311,7 @@ functionality of the language. Some examples:</p>
     the iterators <code>map</code> and <code>filter</code> as well as functions such as <code>reduce</code>.</li>
     <li><code>using itr;</code>: Does the same thing as <code>using fnl;</code> but with the <code>iterable</code>
     library (localized as <code>itr</code>).</li>
+    <li><code>using *;</code>: Load all available syntax extensions.</li>
 </ul>
 
 <h3>Function Calls</h3>
@@ -564,7 +603,7 @@ async madeIntoACoroutine()-&gt;
 <p>Class definitions are a specific kind of statement that is like a table but
 uses a different form of assignment. Assignment using names can be done like
 traditional tables but function declaration can also be done. Classes start
-with the word "new", optionally a name for the class, optionally "extends"
+with the word "class", optionally a name for the class, optionally "extends"
 followed by a class to extend, and an opening curly bracket.</p>
 
 <p>While inside of a class, methods can make use of the fat arrow operator to
@@ -575,7 +614,7 @@ accessed in the <code>print()</code> statement.</p>
 
 <pre>
 {Object} = <span class="global">require</span>(<span class="string">"core"</span>);
-new ExampleClass extends Object {
+class ExampleClass extends Object {
     x = <span class="string">"hello"</span>;
     y = <span class="string">"world"</span>;
     <span class="global">print</span>()=&gt; <span class="global">print</span>(<span class="string">"%s %s"</span> % {@x, @y})
@@ -594,7 +633,7 @@ most class instances (where <code>__tostring()</code> is not defined).</p>
 
 
 <pre>
-new ExampleClass extends Object {
+class ExampleClass extends Object {
     <span class="global">print</span>()=&gt;
         <span class="global">print</span>(<span class="string">"&lt;%s&gt;() =&gt; %s"</span> % {ExampleClass, @})
 }
@@ -609,13 +648,51 @@ is not required to use this format to call the method.</p>
 
 
 <pre>
-new ExampleClass extends Object {
+class ExampleClass extends Object {
     example_method()=&gt; <span class="global">print</span>(<span class="string">"hi!"</span>)
 }
-new ExampleClassToo extends ExampleClass {
+class ExampleClassToo extends ExampleClass {
     example_method()=&gt; <span class="global">print</span>(<span class="string">"hello!"</span>);
 }
 (ExampleClassToo()):example_method&lt;ExampleClass&gt;(); <span class="comment">-- hi!</span>
+</pre>
+
+
+<h3>Interfaces</h3>
+
+<p>Interfaces are a basic extension onto classes that essentially ensure that a
+class has a certain method or value. If the class is not generated with any
+value at all of the names in the interface, the class will fail to generate and
+an error will be thrown.</p>
+
+
+<pre>
+lfs = <span class="global">require</span>(<span class="string">"lfs"</span>);
+
+interface IScope { descope; }
+
+class UseDir implements IScope {
+    __init(dir)=&gt; {
+        @old_dir = <span class="global">assert</span>(<span class="global">os</span>.getenv(<span class="string">"PWD"</span>), <span class="string">"missing directory"</span>);
+        lfs.chdir(dir)
+    }
+    close()=&gt; lfs.chdir(@old_dir);
+}
+</pre>
+
+
+<p>Classes extended upon another class will still be able to use the method of the
+previous class when using an interface. The methods do not have to be added
+again to avoid errors.</p>
+
+
+<pre>
+class UseDirAndPrint extends UseDir implements IScope {
+    __init(dir)=&gt; {
+        self:__init&lt;UseDir&gt;(self); <span class="comment">-- initialize in extended class
+</span>        <span class="global">print</span>(dir);
+    }
+}
 </pre>
 
 
@@ -624,7 +701,7 @@ new ExampleClassToo extends ExampleClass {
 </div> <!-- id="main" -->
 <div id="about">
 <i>generated by <a href="http://github.com/stevedonovan/LDoc">LDoc 1.4.6</a></i>
-<i style="float:right;">Last updated 2016-12-12 11:23:58 </i>
+<i style="float:right;">Last updated 2016-12-23 15:45:05 </i>
 </div> <!-- id="about" -->
 </div> <!-- id="container" -->
 </body>

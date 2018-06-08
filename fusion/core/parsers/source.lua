@@ -3,6 +3,7 @@
 
 local lexer = require("fusion.core.lexer")
 local lfs = require("lfs")
+local unpack = unpack or table.unpack -- luacheck: ignore 113
 
 local indent = 0
 local parser = {}
@@ -12,7 +13,7 @@ local last_node = {} -- luacheck: ignore 231
 --- Transform a node using the registered handler.
 -- @tparam table node
 local function transform(node, ...)
-	assert(node.type, ("Bad node: %s"):format(node))
+	assert(node.type, ("Bad node: %s"):format(tostring(node)))
 	assert(handlers[node.type], ("Can't find node handler for (%s)"):format(node.type))
 	last_node = node
 	return handlers[node.type](node, ...)
@@ -54,15 +55,24 @@ local _tablegen_level = 0
 handlers['nil'] = function() return 'nil' end
 handlers['vararg'] = function(node) return '...' end -- luacheck: ignore 212
 
+local dirs = {
+	class = 'local class = require("fusion.stdlib.class")';
+	fnl = 'local fnl = require("fusion.stdlib.functional")';
+	itr = 'local itr = require("fusion.stdlib.iterable")';
+	re = 'local re = require("re")';
+	ternary = 'local ternary = require("fusion.stdlib.ternary")';
+}
+
 handlers['using'] = function(node)
 	local output = {}
-	for _, directive in ipairs(node) do
-		if directive == "class" then
-			output[#output + 1] = 'local class = require("fusion.stdlib.class")'
-		elseif directive == "fnl" then
-			output[#output + 1] = 'local fnl = require("fusion.stdlib.functional")'
-		elseif directive == "itr" then
-			output[#output + 1] = 'local itr = require("fusion.stdlib.iterable")'
+	if node[1] == "*" then
+		for _, directive in pairs(dirs) do
+			output[#output + 1] = directive
+		end
+		table.sort(output) -- consistency, helps w/ tests
+	else
+		for _, directive in ipairs(node) do
+			output[#output + 1] = dirs[directive]
 		end
 	end
 	return table.concat(output, l"\n")
@@ -83,10 +93,18 @@ local function transform_class_function(node)
 	}
 end
 
+handlers['re'] = function(node)
+	return 're.compile(' .. ("%q"):format(node[1]) .. ')'
+end
+
 handlers['class'] = function(node)
 	node[1].type = 'table'
-	if not node.extends then
-		node.extends = {type = "nil"}
+	local data = {}
+	if node.extends then
+		data[1] = "extends = " .. transform(node.extends)
+	end
+	if node.implements then
+		data[#data + 1] = "implements = " .. transform(node.implements)
 	end
 	for i, v in ipairs(node[1]) do
 		if v.type == "function_definition" then
@@ -95,11 +113,27 @@ handlers['class'] = function(node)
 	end
 	if node.is_local then
 		return ("local %s = class(%s, %s, %q)"):format(transform(node.name),
-			transform(node[1]), transform(node.extends), transform(node.name))
+			transform(node[1]), "{" .. table.concat(data, ",") .. "}",
+			transform(node.name))
 	else
 		return ("%s = class(%s, %s, %q)"):format(transform(node.name),
-			transform(node[1]), transform(node.extends), transform(node.name))
+			transform(node[1]), "{" .. table.concat(data, ",") .. "}",
+			transform(node.name))
 	end
+end
+
+handlers['interface'] = function(node)
+	local names = node[1]
+	for i, v in ipairs(names) do
+		names[i] = {name = v, {type = "boolean", true}}
+	end
+	return transform({type="assignment";
+		variable_list = {node.name};
+		expression_list = {{
+			type = "table";
+			unpack(names);
+		}};
+	})
 end
 
 handlers['table'] = function(node)
@@ -119,8 +153,7 @@ handlers['table'] = function(node)
 						generator[1].index;
 						type = "variable";
 					}};
-					expression_list = {generator[1][1]};
-				};
+					expression_list = {generator[1][1]}};
 				type = "iterative_for_loop";
 				variable_list = generator.variable_list;
 			}))
@@ -134,8 +167,7 @@ handlers['table'] = function(node)
 						("#_generator_%s + 1"):format(_tablegen_level);
 						type = "variable";
 					}};
-					expression_list = {generator[1]};
-				};
+					expression_list = {generator[1]}};
 				type = "iterative_for_loop";
 				variable_list = generator.variable_list or {generator[1]};
 			}))
@@ -158,13 +190,8 @@ handlers['table'] = function(node)
 				named[#named + 1] = l("[%s] = %s;"):format(transform(item.index),
 					transform(item[1]))
 			else
-				if item.name:match("^[A-Za-z_][A-Za-z0-9_]*$") then
-					named[#named + 1] = l("%s = %s;"):format(item.name,
-						transform(item[1]))
-				else
-					named[#named + 1] = l("[%q] = %s;"):format(item.name,
-						transform(item[1]))
-				end
+				named[#named + 1] = l("%s = %s;"):format(item.name,
+					transform(item[1]))
 			end
 		end
 	end
@@ -220,12 +247,12 @@ handlers['while_loop'] = function(node)
 end
 
 handlers['numeric_for_loop'] = function(node)
-	local output = {"for", node.incremented_variable, "=", transform(
-		node.start), ",", transform(node.stop)}
+	local args = {node.incremented_variable .. "=" ..
+	transform(node.start), transform(node.stop)}
 	if node.step then
-		output[#output + 1] = ","
-		output[#output + 1] = transform(node.step)
+		args[#args + 1] = transform(node.step)
 	end
+	local output = {"for", table.concat(args, ", ")}
 	if node[1].type ~= "block" then
 		output[#output + 1] = transform({type = "block", {node[1]}})
 	else
@@ -255,7 +282,7 @@ handlers['if'] = function(node)
 	for _, blk in ipairs(node['elseif']) do
 		output[#output + 1] = l("elseif %s then"):format(transform(
 			blk.condition))
-		if blk.type == "block" then
+		if blk[1].type == "block" then
 			output[#output + 1] = handlers['block'](blk[1], true)
 		else
 			output[#output + 1] = l("\t" .. transform(blk[1]))
@@ -294,7 +321,7 @@ handlers['function_definition'] = function(node)
 	if node.is_self then
 		args[1] = "self"
 	end
-	if not node[2].type then -- empty parameter list
+	if node[2] and not node[2].type then -- empty parameter list
 		for _, arg in ipairs(node[2]) do
 			if arg.default then
 				defaults[arg.name] = transform(arg.default)
@@ -322,7 +349,7 @@ handlers['function_definition'] = function(node)
 		if node[#node].type == "block" then
 			output[#output + 1] = handlers['block'](node[#node], true)
 		else
-			output[#output + 1] = l(transform(node[#node]))
+			output[#output + 1] = l"\t" .. transform(node[#node])
 		end
 		if node.is_async then
 			-- wrap block in `return coroutine.wrap(function()`
@@ -340,7 +367,7 @@ handlers['lambda'] = function(node)
 	if node.is_self then
 		args[1] = "self"
 	end
-	if not node[1].type then -- empty parameter list
+	if node[1] and not node[1].type then -- empty parameter list
 		for _, arg in ipairs(node[1]) do
 			if arg.default then
 				defaults[arg.name] = transform(arg.default)
@@ -376,6 +403,12 @@ local operator_transformations = {
 	["!"] = "not "; -- rare case; usually symbols instead of kw,
 }
 
+local ternary_operator_transformations = {
+	['?:'] = function(condition, is_if, is_else)
+		return ("(ternary(%s, %s, %s))"):format(condition, is_if, is_else)
+	end
+}
+
 handlers['expression'] = function(node)
 	if operator_transformations[node.operator] then
 		node.operator = operator_transformations[node.operator]
@@ -385,8 +418,7 @@ handlers['expression'] = function(node)
 		for i = 1, #node do
 			expr[#expr + 1] = transform(node[i])
 		end
-		error("too many values in expression", '(' .. node.operator .. ' ' ..
-			table.concat(node, ' ') ')')
+		return ternary_operator_transformations[node.operator](unpack(expr))
 	elseif #node == 2 then
 		return ("(%s %s %s)"):format(transform(node[1]), node.operator,
 			transform(node[2]))
@@ -431,17 +463,36 @@ handlers['assignment'] = function(node)
 		output[1] = "local "
 	end
 	if node.variable_list.is_destructuring then
-		local name = "_des_" .. tostring(des_num)
-		des_num = des_num + 1
 		local expression = transform(node.expression_list[1])
+		local name
+		if node.expression_list[1].type == "variable" and
+			not node.expression_list[1][2] then -- no indexing
+			name = ("_des_%s_%i"):format(expression, des_num)
+		else
+			name = "_des_" .. tostring(des_num)
+		end
+		des_num = des_num + 1
 		local last = {} -- capture all last values
 		table.insert(output, 1, ("local %s = %s\n"):format(name, expression))
-		for i, v in ipairs(node.variable_list) do
-			local value = transform(v)
-			last[#last + 1] = name .. "." .. value
-			output[#output + 1] = value
-			if node.variable_list[i + 1] then
-				output[#output + 1] = ', '
+		if node.variable_list.is_destructuring == "table" then
+			for i, v in ipairs(node.variable_list) do
+				local value = transform(v)
+				last[#last + 1] = name .. "." .. value
+				output[#output + 1] = value
+				if node.variable_list[i + 1] then
+					output[#output + 1] = ', '
+				end
+			end
+		elseif node.variable_list.is_destructuring == "array" then
+			local counter = 0
+			for i, v in ipairs(node.variable_list) do
+				local value = transform(v)
+				counter = counter + 1
+				last[#last + 1] = ("%s[%i]"):format(name, counter)
+				output[#output + 1] = value
+				if node.variable_list[i + 1] then
+					output[#output + 1] = ', '
+				end
 			end
 		end
 		output[#output + 1] = " = "
@@ -458,13 +509,12 @@ end
 handlers['function_call'] = function(node)
 	if node.generator then
 		return transform {
-			node.generator[2];
+			node.generator[1];
 			{type = "function_call";
 				node[1];
-				node[2];
 				has_self = node.has_self;
 				index_class = node.index_class;
-				expression_list = {node.generator[1]};
+				expression_list = node.generator.expression_list;
 			};
 			type = "iterative_for_loop"; -- `in` without `for` only 1 var   V
 			variable_list = node.generator.variable_list or {node.generator[1]}
@@ -476,18 +526,14 @@ handlers['function_call'] = function(node)
 				node.expression_list = node.expression_list or {}
 				table.insert(node.expression_list, 1, node[1])
 				node[1] = {type = "variable", node.index_class}
-				name = transform(node[1]) .. "." .. transform(node[2])
+				name = transform(node[1]) .. "." .. node.has_self
 			else
-				name = transform(node[1]) .. ":" .. transform(node[2])
+				name = transform(node[1]) .. ":" .. node.has_self
 			end
 		else
 			name = transform(node[1])
 		end
-		if node.expression_list then
-			return name .. "(" .. transform_expression_list(node) .. ")"
-		else
-			return name .. "()"
-		end
+		return name .. "(" .. transform_expression_list(node) .. ")"
 	end
 end
 
@@ -521,7 +567,7 @@ handlers['dqstring'] = function(node)
 end
 
 handlers['blstring'] = function(node)
-	local eq = ("="):rep(node.eq)
+	local eq = ("="):rep(#node.eq)
 	return ("[%s[%s]%s]"):format(eq, node[1], eq)
 end
 
@@ -535,20 +581,16 @@ function parser.compile(input_stream, output_stream)
 	end
 end
 
---- Read FusionScript code from a file and return or print output.
+--- Read FusionScript code from a file and return output.
 -- @tparam string file File to read input from
--- @tparam boolean dump Boolean to print output instead of return (optional)
 -- @treturn string Lua code
-function parser.read_file(file, dump)
+function parser.read_file(file)
 	local append, output
-	if dump then
-		append = print
-	else
-		output = {}
-		append = function(line) output[#output + 1] = line end
-	end
-	local source_file = io.open(file)
-	if not source_file:read("*l"):match("^#!") then
+	output = {}
+	append = function(line) output[#output + 1] = line end
+	local source_file = assert(io.open(file))
+	local line = source_file:read("*l")
+	if line and not line:match("^#!") then
 		source_file:seek("set")
 	end
 	local node = lexer:match(source_file:read("*a"))
@@ -558,19 +600,17 @@ function parser.read_file(file, dump)
 			coroutine.yield(value)
 		end
 	end), append)
-	return table.concat(output, "\n")
+	return table.concat(output, "\n") .. "\n" -- EOL at EOF
 end
+
+local loadstring = loadstring or load -- luacheck: ignore 113
 
 --- Load FusionScript code from a file and return a function to run the code.
 -- @tparam string file
 -- @treturn function Loaded FusionScript code
 function parser.load_file(file)
 	local content = parser.read_file(file)
-	if loadstring then -- luacheck: ignore 113
-		return assert(loadstring(content)) -- luacheck: ignore 113
-	else
-		return assert(load(content))
-	end
+	return assert(loadstring(content))
 end
 
 --- Load and run FusionScript code from a file
@@ -599,7 +639,7 @@ function parser.search_for(module_name)
 	for _, path in ipairs(package.fusepath_t) do
 		msg[#msg + 1] = ("\tno file %q"):format(path:gsub("?", module_path))
 	end
-	return nil, "\n" .. table.concat(msg, "\n")
+	return "\n" .. table.concat(msg, "\n")
 end
 
 --- Inject `parser.search_for` into the `require()` searchers list.
@@ -607,12 +647,12 @@ end
 -- @usage parser.inject_loader(); print(require("test_module"))
 -- -- Attempts to load a FusionScript `test_module` package
 function parser.inject_loader()
-	for _, loader in ipairs(package.searchers) do
+	for _, loader in ipairs(package.loaders or package.searchers) do
 		if loader == parser.search_for then
 			return false
 		end
 	end
-	package.searchers[2] = parser.search_for
+	table.insert(package.loaders or package.searchers, 2, parser.search_for)
 	return true
 end
 
@@ -621,6 +661,9 @@ if not package.fusepath then
 	for path in package.path:gmatch("[^;]+") do
 		local match = path:match("^(.+)%.lua$")
 		if match then
+			if match:sub(1, 2) == "./" then
+				paths[#paths + 1] = "./vendor/" .. match:sub(3) .. ".fuse"
+			end
 			paths[#paths + 1] = match .. ".fuse"
 		end
 	end

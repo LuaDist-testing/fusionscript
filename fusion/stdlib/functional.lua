@@ -2,20 +2,32 @@
 -- @module fusion.stdlib.functional
 local unpack = unpack or table.unpack -- luacheck: ignore 113
 
+--- Iterate over a table's keys and values
+-- @tparam table input
+-- @treturn iter Initialized iterator
+local function _pairs(input)
+	return coroutine.wrap(function()
+		for k, v in pairs(input) do
+			coroutine.yield(k, v)
+		end
+	end)
+end
+
 --- Return an iterator over a value if possible or the value passed.
 -- Possible value types can be strings and any object with __pairs or __ipairs
 -- metadata.
 -- @tparam table input Table to iterate over (can also be iterator function)
 -- @tparam function iterator Table iterator to use (`pairs()` by default)
 -- @treturn function
-local function iter(input, iterator)
+local function iter(input, ...)
+	local iterator = ...
 	if type(input) == "function" then
-		return input
+		return input, ...
 	elseif type(input) == "string" then
 		return input:gmatch(".")
 	else
 		if not iterator then
-			return iter(input, pairs)
+			return iter(input, _pairs)
 		end
 		return iterator(input)
 	end
@@ -39,18 +51,13 @@ end
 -- @tparam iter input
 -- @treturn iter Initialized iterator
 -- @usage print(x in map(((v)-> v ^ 2), 1::10)); -- squares
-local function map(fn, input, ...)
-	local _args = {...}
-	for i, v in ipairs(_args) do
-		_args[i] = iter(v)
-	end
+local function map(fn, input)
 	for k, v in iter(input) do
-		local t0 = {}
-		for i, _v in ipairs(_args) do -- luacheck: ignore 213
-			table.insert(t0, _v())
+		if v then
+			coroutine.yield(k, fn(v))
+		else
+			coroutine.yield(fn(k))
 		end
-		input[k] = fn(v, unpack(t0))
-		coroutine.yield(k, fn(v, unpack(t0)))
 	end
 end
 
@@ -192,6 +199,7 @@ local function sum(input, negative)
 end
 
 return {
+	_pairs = _pairs;
 	_iter = iter;
 	_mk_gen = mk_gen;
 	all = all;

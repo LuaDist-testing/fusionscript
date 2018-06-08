@@ -1,0 +1,63 @@
+-- basic conditions --
+
+if a {
+
+}
+
+if a
+	print("test");
+
+
+if (a) {
+
+}
+
+if (! a) {
+
+}
+
+if x() {
+
+}
+
+if (! x()) {
+
+}
+
+-- else --
+
+if a {
+	
+} else {
+
+}
+
+if a() {
+	
+} else {
+
+}
+
+if (! a) {
+	
+} else {
+
+}
+
+if (! a()) {
+	
+} else
+	print("test");
+
+-- elseif conditions --
+
+
+if a {
+
+} elseif b() {
+
+} elseif (! c)
+	return a;
+else {
+
+}

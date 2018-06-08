@@ -20,7 +20,7 @@ defs['numberify'] = tonumber
 
 defs.print = print
 
-defs.err = function(pos, char)
+defs.err = function(pos, char, ctx)
 	local line = 1
 	local start = 1
 	local line_start = 0
@@ -37,6 +37,7 @@ defs.err = function(pos, char)
 		("Unexpected character on line %d"):format(line);
 		("Token: %s"):format(char);
 		("Input: >> %q <<"):format(input);
+		ctx
 	}
 	local errormsg = {
 		msg = errormsg_table;
@@ -87,13 +88,6 @@ defs.semicolon = function(pos)
 		context = current_file:sub(pos - 7, pos);
 		quick = "semicolon"
 	}
-	if current_file:match("^[A-Za-z_]", pos) then
-		local start_pos = pos
-		while current_file:match("^[A-Za-z_]", start_pos) do
-			start_pos = start_pos - 1
-		end
-		errormsg.context = current_file:sub(start_pos, pos)
-	end
 	setmetatable(errormsg, {
 		__tostring = function()
 			return table.concat(errormsg_table, "\n")
@@ -106,11 +100,13 @@ local pattern = re.compile([[
 	statement_list <- ws {| ((! '}') rstatement ws)* |}
 	statement_block <- {| {:type: '' -> 'block' :} '{' ws statement_list ws '}' |}
 	statement <- (
-		function_definition
+		function_definition /
+		class /
+		interface
 	) / (
 		{|{:type: {'using'} :} (space using_name / ws '{' ws
 			using_name (ws ',' ws using_name)*
-		ws '}' / r) |} /
+		ws '}' / ((pos '' -> 'Unclosed using statement') -> err)) |} /
 		assignment /
 		function_call /
 		return /
@@ -120,19 +116,20 @@ local pattern = re.compile([[
 		while_loop /
 		numeric_for_loop /
 		iterative_for_loop /
-		if /
-		class
+		if
 	)
-	using_name <- {[A-Za-z]+}
-	keyword <- 'local' / 'new' / 'extends' / 'break' / 'return' / 'yield' /
+	using_name <- {[A-Za-z]+} / {'*'}
+	keyword <- 'local' / 'class' / 'extends' / 'break' / 'return' / 'yield' /
 		'true' / 'false' / 'nil' / 'if' / 'else' / 'elseif' / 'while' / 'for' /
 		'in' / 'async'
-	rstatement <- statement / r
-	r <- ({} {.}) -> err
+	rstatement <- statement / (pos '' -> 'Missing statement') -> err
+	r <- pos -> err
+	pos <- {} {.}
 	class <- {| {:is_local: 'local' -> true space :}?
-		{:type: 'new' -> 'class' :} space {:name: variable / r :}
-		(ws 'extends' ws {:extends: variable / r :})? ws
-		'{' ws {| ((! '}') (class_field / r) ws)* |} ws '}'
+		{:type: {'class'} :} space {:name: variable / r :}
+		(ws 'extends' ws {:extends: variable / r :})?
+		(ws 'implements' ws {:implements: variable / r :})?
+		ws '{' ws {| ((! '}') (class_field / r) ws)* |} ws '}'
 	|}
 	class_field <-
 		function_definition /
@@ -143,6 +140,11 @@ local pattern = re.compile([[
 				/ {:name: name / r :} ws ('=' / r) ws (expression / r) ws (';' / r)
 			)
 		|}
+	interface <- {| {:is_local: 'local' -> true space :}?
+		{:type: {'interface'} :} space {:name: variable / r :}
+		ws '{' ws {| ((! '}') (interface_field / r) ws)* |} ws '}'
+	|}
+	interface_field <- name ws ';'
 
 	return <- {| {:type: {'return' / 'yield'} :} ws expression_list? |}
 
@@ -161,7 +163,8 @@ local pattern = re.compile([[
 		function_argument ((! ')') ws (',' / r) ws function_argument)*
 	|}
 	function_argument <- {|
-		{:name: ((! ")") (name / r)) :} (ws '=' ws {:default: expression / r:})?
+		{:name: ((! ")") (name / {'...'} / r)) :} (ws '=' ws
+		{:default: expression / r:})?
 	|}
 
 	while_loop <- {| {:type: '' -> 'while_loop' :}
@@ -190,12 +193,13 @@ local pattern = re.compile([[
 	|}
 
 	function_call <- {| {:type: '' -> 'function_call' :} (
-		variable ({:has_self: ':' -> true :} (variable / r) ws
+		(variable / literal) ({:has_self: ':' {name / r} :} ws
 		{:index_class: ws '<' ws {expression} ws '>' :}? )?
 		) ws '(' ws function_call_body? ws ')'
 	|}
 	function_call_body <- {:generator: {|
-		expression (ws 'for' ws (variable_list / r))? ws 'in' ws (expression / r)
+		expression_list (ws 'for' ws (variable_list / r))? ws 'in' ws (expression
+		/ r)
 	|} :} / function_args
 	function_args <- expression_list?
 
@@ -207,8 +211,11 @@ local pattern = re.compile([[
 	name_list <- {:variable_list: {|
 		local_name (ws ',' ws (local_name / r))*
 	|} :} / {:variable_list: {|
-		{:is_destructuring: '{' -> true :} ws local_name
+		{:is_destructuring: '{' -> 'table' :} ws local_name -- local {x} = a;
 		(ws ',' ws (local_name / r))* ws '}'
+	|} :} / {:variable_list: {|
+		{:is_destructuring: '[' -> 'array' :} ws local_name -- local [x] = a;
+		(ws ',' ws (local_name / r))* ws ']'
 	|} :}
 	local_name <- {| {:type: '' -> 'variable' :} name |}
 	expression_list <- {:expression_list: {|
@@ -226,6 +233,7 @@ local pattern = re.compile([[
 		'&&' /
 		'||' /
 		'..' /
+		'?:' /
 		[-!#~+*/%^&|<>]
 	:}
 	value <-
@@ -243,6 +251,7 @@ local pattern = re.compile([[
 	name <- (! (keyword [^A-Za-z0-9_])) {[A-Za-z_][A-Za-z0-9_]*}
 
 	literal <-
+		re /
 		table /
 		{| {:type: '' -> 'vararg' :} { '...' } |} /
 		range /
@@ -252,6 +261,9 @@ local pattern = re.compile([[
 			('true' / 'false') -> bool
 		|} /
 		{| {:type: {'nil'} :} |}
+	re <- {| {:type: '' -> 're' :}
+		'/' {('\' . / [^/]+)*} ('/' / r)
+	|}
 	range <- {| {:type: '' -> 'range' :}
 		{:start: number :} '::' {:stop: number :} ('::' {:step: number :})?
 	|}

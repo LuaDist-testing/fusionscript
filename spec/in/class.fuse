@@ -1,0 +1,64 @@
+using class;
+
+-- basic class --
+
+class Example {
+	__init(a = 5)=>
+		@a = a;
+	print()=>
+		print(@a);
+}
+
+a = Example();
+b = Example(15);
+
+-- local class --
+
+local class ExampleLocal {
+
+}
+
+-- extension class --
+
+class ExampleToo extends Example {
+	__init(a, b = 10)=>
+		@a, @b = a, b;
+	print()->
+		print(@b);
+}
+
+c = ExampleToo();
+c:print(); -- @b
+c:print<Example>(); -- @a
+
+-- superinitialization --
+
+class ExampleThree extends ExampleToo {
+	__init(a, b)=>
+		self:__init<ExampleToo>(a, b);
+}
+
+-- interface
+
+interface IScope {
+	close;
+}
+
+-- implementation of interface
+
+class IO implements IScope {
+	close()=> {
+		if (! @closed)
+			@closed = true;
+		else
+			return;
+		@file:close();
+	}
+}
+
+-- extension of implemented interface, inherits close()
+
+class File extends IO implements IScope {
+	__new(...)=>
+		@file = io.open(...);
+}
