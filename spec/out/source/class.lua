@@ -12,7 +12,7 @@ Example = class({
 	test = (function(self)
 		return coroutine.wrap(function()
 			self:print()
-			for i in itr.range(1, 10) do
+			for i=1, 10 do
 				coroutine.yield(i)
 			end
 		end)
@@ -37,7 +37,7 @@ c:print()
 Example.print(c)
 ExampleThree = class({
 	__init = (function(self, a, b)
-		ExampleToo.__init(self, a, b)
+		self.__super.__init(self, a, b)
 	end);
 }, {extends = ExampleToo}, "ExampleThree")
 X = {}

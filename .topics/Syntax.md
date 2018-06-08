@@ -71,19 +71,6 @@ expression; or a variable name, `=`, and an expression.
 }
 ```
 
-### Ranges
-
-Ranges are a quick way to make an iterator, like a numeric `for` loop. They
-don't exist in Lua and require the `using itr;` statement somewhere before the
-range is constructed to be used. The syntax for ranges is simple: a _start_, a
-_stop_, and optionally a _step_ separated with two semicolons.
-
-```fuse
-using itr;
-for (i in 1::10::2)
-    print(i); -- odds from 1 to 10
-```
-
 ### Patterns
 
 Patterns use the LPeg `re` module to provide a quick way to make LPeg patterns
@@ -209,11 +196,22 @@ functionality of the language. Some examples:
 
 - `using class;`: Import the `class` stdlib module as a local variable; this
 can be used with the [`class`](#class-definitions) keyword.
-- `using fnl;`: Import the `functional` stdlib as `fnl`; adds support for
-the iterators `map` and `filter` as well as functions such as `reduce`.
-- `using itr;`: Does the same thing as `using fnl;` but with the `iterable`
-library (localized as `itr`).
+- `using {re, trinary};`: Import libraries from a list of names.
 - `using *;`: Load all available syntax extensions.
+
+### Importing Modules
+
+FusionScript offers a syntax-assisted way to import modules. Similar to how
+assignment destructures, the `import` statement also allows modifying the names
+of imported values.
+
+```fuse
+import error {
+	BaseError;
+	Error;
+	assert => error_lib_assert;
+};
+```
 
 ### Function Calls
 
@@ -225,6 +223,16 @@ by a semicolon (`;`).
 ```fuse
 print("Hello World!");
 io["write"]("Hello World!\n");
+```
+
+Function calls can also be chained on one another.
+
+```fuse
+Object():method();
+Try(x):catch(IOError, handle_io_error);
+File("output.log"):with(\file-> {
+	file:write("Message!");
+});
 ```
 
 ### Assignment and Destructuring
@@ -254,6 +262,41 @@ b = print;
 local asdf = b;
 ```
 
+If a value is used often but is never changed, it might be a good idea to turn
+the value into a `const` value. The values are changed at compile time, which
+can speed up the time it takes to look up these values when running. Multiple
+associated `const` values could be stored using an `enum`, which allows for
+multiple sequential integer `const` values to be stored in one structure.
+
+Values inside of an enumeration will be auto-incremented, but can be manually
+set to any integer value. Values that are assigned after the beginning of an
+auto-incrementation can't be less than the previous value (so, if a value in
+the enumeration is `5`, the next value can't be `4`).
+
+```fuse
+const format_pattern = "%s: %s %q";
+const max_char = 255;
+
+enum Colors {
+	RED;
+	BLUE;
+	GREEN;
+};
+
+const Letters {
+	A = 65;
+	B;
+	C;
+	a = 97;
+	b;
+	c;
+}
+```
+
+Tables, functions, and userdata can't be `const` values. Attempting to assign
+a value to the direct name of a `const` value will result in an error upon
+compilation.
+
 ---
 
 Destructuring is a quick way to take items from a table and assign them to
@@ -264,6 +307,21 @@ time the function is needed.
 ```fuse
 local {print, write} = io.stdout;
 print("Hello World!");
+```
+
+Array-like tables can also be destructured into the elements of the array, from
+value `1` to value `n`, where `n` is the count of variables.
+
+```fuse
+local [a, b, c] = {1, 2, 3};
+```
+
+Values that are destructured can also be assigned to a different name than was
+taken from the value being destructured. This can help avoid name collisions
+and prevent overriding constant variables.
+
+```fuse
+local {values, reserved_const => other_name} = tbl;
 ```
 
 ---
@@ -513,21 +571,6 @@ class ExampleClass extends Object {
 (ExampleClass()):print() -- <ExampleClass(){example.fuse#1}> => ExampleClass()
 ```
 
-If a certain method is needed somewhere in the inheritance chain, it can be
-accessed before the method call by using angle brackets surrounding the class
-for which to call the method. If there is only one instance of the method, it
-is not required to use this format to call the method.
-
-```fuse
-class ExampleClass extends Object {
-    example_method()=> print("hi!")
-}
-class ExampleClassToo extends ExampleClass {
-    example_method()=> print("hello!");
-}
-(ExampleClassToo()):example_method<ExampleClass>(); -- hi!
-```
-
 ### Interfaces
 
 Interfaces are a basic extension onto classes that essentially ensure that a
@@ -556,7 +599,7 @@ again to avoid errors.
 ```fuse
 class UseDirAndPrint extends UseDir implements IScope {
     __init(dir)=> {
-        self:__init<UseDir>(self); -- initialize in extended class
+    	self.__super.__init(self);
         print(dir);
     }
 }

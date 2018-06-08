@@ -3,26 +3,36 @@
 -- @script fusion-ast
 -- @author ChickenNuggers
 -- @usage fusion-ast [FILE]
-local lexer = require("fusion.core.lexer")
-local pretty = require("pl.pretty")
+local argparse = require("argparse")
+local parser = require("fusion.core.parser")
+local serpent = require("serpent")
+
+local argparser = argparse() {
+	name = "fusion-ast";
+	description = "Print a Lua table containing FusionScript AST";
+	epilog = "For more info, see https://fusionscript.info";
+}
+argparser:argument("file", "File(s) to parse"):args("+")
+local files = argparser:parse().file
 
 local function read_file(file)
 	local file_handler = assert(io.open(file))
 	local line = file_handler:read()
 	if line:sub(1, 2) == "#!" then
-		pretty.dump(lexer:match(file_handler:read("*a")))
+		print(serpent.block(parser:match(file_handler:read("*a")),
+			{comment = false}))
 	else
-		pretty.dump(lexer:match(line .. '\n' .. file_handler:read("*a")))
+		print(serpent.block(parser:match(line .. '\n' ..
+			file_handler:read("*a")), {comment = false}))
 	end
 	file_handler:close()
 end
 
-local args = {...}
-if #args > 1 then
-	for file in ipairs(args) do
+if #files > 1 then
+	for file in ipairs(files) do
 		print(("--- %s ---"):format(file))
 		read_file(file)
 	end
 else
-	read_file(args[1])
+	read_file(files[1])
 end

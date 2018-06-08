@@ -1,25 +1,43 @@
 --- Compile FusionScript AST to Lua code
--- @module fusion.core.parsers.source
+-- @module fusion.core.compilers.source
 
-local lexer = require("fusion.core.lexer")
+local parser = require("fusion.core.parser")
 local lfs = require("lfs")
-local unpack = unpack or table.unpack -- luacheck: ignore 113
+local unpack = require("fusion.util").unpack
+local serpent = require("serpent")
 
-local parser = {}
+local compiler = {}
 local handlers = {}
 
---- Initialize a parser state
-function parser:new()
-	self = setmetatable({}, {__index = parser})
-	self.indent = 0
-	self.last_node = {}
-	return self
+--- Initialize a compiler state
+function compiler:new() -- luacheck: ignore 212
+	return setmetatable({
+		indent = 0;
+		last_node = {};
+		constants = {};
+		enums = {};
+		using = {};
+		des_num = 0;
+	}, {__index = compiler})
 end
 
 --- Transform a node using the registered handler.
 -- @tparam table node
-function parser:transform(node, ...)
-	assert(node.type, ("Bad node: %s"):format(tostring(node)))
+function compiler:transform(node, ...)
+	if type(node) ~= "table" then
+		error(("Bad node type for (%s): %s"):format(node, type(node)))
+	elseif not node.type then
+		error("Bad node:\n" .. serpent.block(node, {comment = false}))
+	elseif node.type == "variable" then
+		-- scan through const and enums
+		if self.constants[node[1]] and #node == 1 then
+			-- is a constant, from statement or enumeration
+			return ("(%s)"):format(self.constants[node[1]])
+		elseif self.enums[node[1]] and #node == 2 then
+			-- is indexing an enum
+			return ("(%s)"):format(self.constants[node[2]])
+		end
+	end
 	assert(handlers[node.type], ("Can't find node handler for (%s)"):format(node.type))
 	self.last_node = node
 	return handlers[node.type](self, node, ...)
@@ -27,13 +45,13 @@ end
 
 --- Add indent to a line of text.
 -- @tparam string line
-function parser:l(line)
+function compiler:l(line)
 	return ("\t"):rep(self.indent) .. line
 end
 
 --- Convert an expression_list field to a transformed list of expressions.
 -- @tparam table node
-function parser:transform_expression_list(node)
+function compiler:transform_expression_list(node)
 	if not node.expression_list then
 		return ""
 	end
@@ -47,7 +65,7 @@ end
 
 --- Convert a variable_list to a transformed list of variable names.
 -- @tparam table node
-function parser:transform_variable_list(node)
+function compiler:transform_variable_list(node)
 	local output = {}
 	local list = node.variable_list
 	for i=1, #list do
@@ -61,32 +79,67 @@ local _tablegen_level = 0
 handlers['nil'] = function() return 'nil' end
 handlers['vararg'] = function() return '...' end
 
-local dirs = {
-	class = 'local class = require("fusion.stdlib.class")';
-	fnl = 'local fnl = require("fusion.stdlib.functional")';
-	itr = 'local itr = require("fusion.stdlib.iterable")';
-	re = 'local re = require("re")';
-	ternary = 'local ternary = require("fusion.stdlib.ternary")';
+compiler.extensions = {
+	class = "fusion.stdlib.class";
+	re = "re";
+	ternary = "fusion.stdlib.ternary";
 }
+local ext_pat = "local %s = require(%q)"
 
-handlers['using'] = function(self, node) -- TODO: no repeat?
+handlers['using'] = function(self, node)
 	local output = {}
 	if node[1] == "*" then
-		for _, directive in pairs(dirs) do
-			output[#output + 1] = directive
+		for name, module in pairs(self.extensions) do
+			if not self.using[name] then
+				self.using[name] = true
+				output[#output + 1] = ext_pat:format(name, module)
+			end
 		end
-		table.sort(output) -- consistency, helps w/ tests
+		table.sort(output)
 	else
-		for _, directive in ipairs(node) do
-			output[#output + 1] = dirs[directive]
+		for _, extension in ipairs(node) do
+			if not self.using[extension] then
+				self.using[extension] = true
+				output[#output + 1] = ext_pat:format(extension,
+					self.extensions[extension])
+			end
 		end
 	end
 	return table.concat(output, self:l"\n")
 end
 
+handlers['import'] = function(self, node)
+	local output = {}
+	if node.get_everything then
+		error("scanning cached files for exported values is not yet supported")
+	else
+		local name = ("_des_%i"):format(self.des_num)
+		output[1] = ("local %s = require(%q)\n"):format(name,
+			table.concat(node.to_import, "."))
+		self.des_num = self.des_num + 1
+		output[2] = "local "
+		local last = {}
+		for i, v in ipairs(node.destructured_values) do
+			local first = v.assign_to or v[1]
+			if self.constants[first] or self.enums[first] then
+				error(("Failed to destructure into %s over enum/const"):format(
+					first))
+			end
+			local value = v[1] -- avoid transforming const values
+			last[#last + 1] = name .. "." .. value
+			output[#output + 1] = v.assign_to or value
+			if node.destructured_values[i + 1] then
+				output[#output + 1] = ", "
+			end
+		end
+		output[#output + 1] = (" = %s"):format(table.concat(last, ", "))
+	end
+	return table.concat(output)
+end
+
 --- Convert a function field in a class to a lambda table assignment.
 -- @tparam table node
-function parser:transform_class_function(node)
+function compiler:transform_class_function(node)
 	return {
 		name = self:transform(node[1]);
 		{
@@ -100,7 +153,7 @@ function parser:transform_class_function(node)
 	}
 end
 
-handlers['re'] = function(self, node)
+handlers['re'] = function(self, node) -- luacheck: ignore 212
 	return 're.compile(' .. ("%q"):format(node[1]) .. ')'
 end
 
@@ -212,11 +265,11 @@ handlers['table'] = function(self, node)
 	return table.concat(output, "\n")
 end
 
-handlers['boolean'] = function(self, node)
+handlers['boolean'] = function(self, node) -- luacheck: ignore 212
 	return tostring(node[1])
 end
 
-handlers['break'] = function(self, node)
+handlers['break'] = function(self, node) -- luacheck: ignore 212
 	return node.type
 end
 
@@ -440,7 +493,7 @@ handlers['expression'] = function(self, node)
 	if operator_transformations[node.operator] then
 		node.operator = operator_transformations[node.operator]
 	end
-	if #node > 2 then -- TODO chain operators
+	if #node > 2 then
 		local expr = {}
 		for i = 1, #node do
 			expr[#expr + 1] = self:transform(node[i])
@@ -454,7 +507,7 @@ handlers['expression'] = function(self, node)
 	end
 end
 
-handlers['number'] = function(self, node)
+handlers['number'] = function(self, node) -- luacheck: ignore 212
 	local is_negative = node.is_negative and "-" or ""
 	if node.base == "10" then
 		if math.floor(node[1]) == node[1] then
@@ -467,22 +520,43 @@ handlers['number'] = function(self, node)
 	end
 end
 
-handlers['range'] = function(self, node)
-	local output = {
-		"itr.range(";
-		self:transform(node.start);
-		", ";
-		self:transform(node.stop);
-	}
-	if node.step then
-		output[5] = ", "
-		output[6] = self:transform(node.step)
+handlers['const'] = function(self, node)
+	if self.constants[node[1]] then
+		error(("Failed to reassign const value %s"):format(node[1]))
 	end
-	output[#output + 1] = ")"
-	return table.concat(output)
+	self.constants[node[1]] = self:transform(node[2])
 end
 
-local des_num = 0
+handlers['enum'] = function(self, node) -- luacheck: ignore
+	if self.enums[node[1]] then
+		error(("Failed to reassign enum %s"):format(node[1]))
+	end
+	local enum = {}
+	local last = 0
+	-- enumerate enum, add values into constants and self, then add to enums
+	for i, v in ipairs(node) do
+		if i ~= 1 then
+			if self.constants[v[1]] then
+				error(("Failed to reassign const/enum value %s in enum %s"
+					):format(v[1], node[1]))
+			end
+			if v[2] then -- enum X { Y = 1; };
+				local value = self:transform(v[2])
+				if tonumber(value) < last then
+					error(("Value %s in enum %s lower than value %s"):format(
+						value, node[1], last))
+				else
+					last = tonumber(value)
+				end
+			else
+				last = last + 1
+			end
+			self.constants[v[1]] = last
+			enum[v[1]] = last
+		end
+	end
+	self.enums[node[1]] = enum
+end
 
 handlers['assignment'] = function(self, node)
 	local output = {}
@@ -492,6 +566,10 @@ handlers['assignment'] = function(self, node)
 	if node.is_nil then
 		local names = {}
 		for i, v in ipairs(node) do -- luacheck: ignore 213
+			if self.constants[v[1]] then
+				-- attempt to reassign over const value
+				error(("Failed to reassign const value %s"):format(v[1]))
+			end
 			table.insert(names, self:transform(v))
 		end
 		table.insert(output, table.concat(names, ", "))
@@ -501,18 +579,24 @@ handlers['assignment'] = function(self, node)
 		local name
 		if node.expression_list[1].type == "variable" and
 			not node.expression_list[1][2] then -- no indexing
-			name = ("_des_%s_%i"):format(expression, des_num)
+			name = ("_des_%s_%i"):format(expression, self.des_num)
 		else
-			name = "_des_" .. tostring(des_num)
+			name = "_des_" .. tostring(self.des_num)
 		end
-		des_num = des_num + 1
+		self.des_num = self.des_num + 1
 		local last = {} -- capture all last values
 		table.insert(output, 1, ("local %s = %s\n"):format(name, expression))
 		if node.variable_list.is_destructuring == "table" then
 			for i, v in ipairs(node.variable_list) do
-				local value = self:transform(v)
+				-- check if overwriting enum or const into local scope
+				local first = v.assign_to or v[1]
+				if self.constants[first] or self.enums[first] then
+					error(("Failed to destructure into %s over enum/const"):format(
+						first))
+				end
+				local value = v[1] -- avoid transforming const values
 				last[#last + 1] = name .. "." .. value
-				output[#output + 1] = value
+				output[#output + 1] = v.assign_to or value
 				if node.variable_list[i + 1] then
 					output[#output + 1] = ', '
 				end
@@ -520,6 +604,12 @@ handlers['assignment'] = function(self, node)
 		elseif node.variable_list.is_destructuring == "array" then
 			local counter = 0
 			for i, v in ipairs(node.variable_list) do
+				-- check if overwriting enum or const into local scope
+				local first = v[1]
+				if self.constants[first] or self.enums[first] then
+					error(("Failed to destructure into %s over enum/const"):format(
+						first))
+				end
 				local value = self:transform(v)
 				counter = counter + 1
 				last[#last + 1] = ("%s[%i]"):format(name, counter)
@@ -531,8 +621,15 @@ handlers['assignment'] = function(self, node)
 		end
 		output[#output + 1] = " = "
 		output[#output + 1] = table.concat(last, ', ')
-		des_num = des_num - 1
 		return table.concat(output)
+	end
+	for i, v in ipairs(node.variable_list) do -- luacheck: ignore
+		-- check if overwriting enum or const | local, reassign, global
+		local first = v[1]
+		if self.constants[first] or self.enums[first] then
+			error(("Failed to assign value to %s over enum/const"):format(
+				first))
+		end
 	end
 	output[#output + 1] = self:transform_variable_list(node)
 	output[#output + 1] = " = "
@@ -541,37 +638,25 @@ handlers['assignment'] = function(self, node)
 end
 
 handlers['function_call'] = function(self, node)
-	if node.generator then
-		return self:transform {
-			node.generator[1];
-			{type = "function_call";
-				node[1];
-				has_self = node.has_self;
-				index_class = node.index_class;
-				expression_list = node.generator.expression_list or
-					node.generator.variable_list;
-			};
-			type = "iterative_for_loop"; -- `in` without `for` only 1 var   V
-			variable_list = node.generator.variable_list
-		}
-	else
+	local calls = {}
+	for _, call in ipairs(node) do
 		local name
-		if node.has_self then
-			if node.index_class then
-				node.expression_list = node.expression_list or {}
-				table.insert(node.expression_list, 1, node[1])
-				node[1] = {type = "variable", node.index_class}
-				name = self:transform(node[1]) .. "." .. node.has_self
-			else
-				name = self:transform(node[1]) .. ":" .. node.has_self
-			end
-		elseif #node[1] == 2 and node.is_method then
-			name = node[1][1] .. ":" .. node[1][2]
-		else
-			name = self:transform(node[1])
+		if _ ~= 1 and call[1] then
+			calls[#calls + 1] = "."
 		end
-		return name .. "(" .. self:transform_expression_list(node) .. ")"
+		if call.has_self and not call[1] then
+			name = ":" .. call.has_self
+		elseif call.has_self then
+			name = self:transform(call[1]) .. ":" .. call.has_self
+		elseif #call[1] == 2 and node.is_self and _ == 1 then
+			name = call[1][1] .. ":" .. call[1][2] -- hack in for @method();
+		else
+			name = self:transform(call[1])
+		end
+		calls[#calls + 1] = name .. "(" ..
+			self:transform_expression_list(call) .. ")"
 	end
+	return table.concat(calls)
 end
 
 handlers['variable'] = function(self, node)
@@ -595,15 +680,15 @@ handlers['variable'] = function(self, node)
 	return table.concat(name)
 end
 
-handlers['sqstring'] = function(self, node)
+handlers['sqstring'] = function(self, node) -- luacheck: ignore 212
 	return ("%q"):format(node[1]:gsub("\\", "\\\\"))  -- \ is ignored in '' strings
 end
 
-handlers['dqstring'] = function(self, node)
+handlers['dqstring'] = function(self, node) -- luacheck: ignore 212
 	return ('"%s"'):format(node[1])
 end
 
-handlers['blstring'] = function(self, node)
+handlers['blstring'] = function(self, node) -- luacheck: ignore 212
 	local eq = ("="):rep(#node.eq)
 	return ("[%s[%s]%s]"):format(eq, node[1], eq)
 end
@@ -612,17 +697,31 @@ end
 -- Do not use this function directly to compile code.
 -- @tparam table in_values Table of values to compile
 -- @tparam function output_stream Repeatedly called with generated code
-function parser.compile(in_values, output_stream)
-	local parser_state = parser:new()
+function compiler.compile(in_values, output_stream)
+	local compiler_state = compiler:new()
+	compiler_state.directives = {}
+	local dirs = compiler_state.directives
+	if in_values.directives then
+		for k, v in pairs(in_values.directives) do -- luacheck: ignore
+			dirs[table.remove(v, 1)] = v -- luacheck: ignore
+		end
+	end
+	if dirs.module then
+		output_stream(("-- :module: %s"):format(table.concat(dirs.module, ".")))
+		output_stream("_ENV = setmetatable({}, {__index = _G})")
+	end
 	for _, input in ipairs(in_values) do
-		output_stream(parser_state:transform(input))
+		output_stream(compiler_state:transform(input))
+	end
+	if compiler_state.directives.module then
+		output_stream("return _ENV")
 	end
 end
 
 --- Read FusionScript code from a file and return output.
 -- @tparam string file File to read input from
 -- @treturn string Lua code
-function parser.read_file(file)
+function compiler.read_file(file)
 	local append, output
 	output = {}
 	append = function(line) output[#output + 1] = line end
@@ -631,9 +730,9 @@ function parser.read_file(file)
 	if line and not line:match("^#!") then
 		source_file:seek("set")
 	end
-	local node = lexer:match(source_file:read("*a"))
+	local node = parser:match(source_file:read("*a"), file)
 	source_file:close()
-	parser.compile(node, append)
+	compiler.compile(node, append)
 	return table.concat(output, "\n") .. "\n" -- EOL at EOF
 end
 
@@ -642,55 +741,55 @@ local loadstring = loadstring or load -- luacheck: ignore 113
 --- Load FusionScript code from a file and return a function to run the code.
 -- @tparam string file
 -- @treturn function Loaded FusionScript code
-function parser.load_file(file)
-	local content = parser.read_file(file)
+function compiler.load_file(file)
+	local content = compiler.read_file(file)
 	return assert(loadstring(content))
 end
 
 --- Load and run FusionScript code from a file
 -- @tparam string file
-function parser.do_file(file)
-	return (parser.load_file(file)())
+function compiler.do_file(file)
+	return (compiler.load_file(file)())
 end
 
 --- Find a module in the package path and return relevant information.
 -- Returns `nil` and an error message if not found.
--- Do not use this function by itself; use `parser.inject_loader()`.
+-- Do not use this function by itself; use `compiler.inject_loader()`.
 -- @tparam string module_name
 -- @treturn function Closure to return loaded module
 -- @treturn string Path to loaded file
-function parser.search_for(module_name)
+function compiler.search_for(module_name)
 	local module_path = module_name:gsub("%.", "/")
 
 	local file_path
-	for _, path in ipairs(package.fusepath_t) do
+	for _, path in ipairs(package.fusepath_t) do -- luacheck: ignore 143
 		file_path = path:gsub("?", module_path)
 		if lfs.attributes(file_path) then
-			return function() return parser.do_file(file_path) end, file_path
+			return function() return compiler.do_file(file_path) end, file_path
 		end
 	end
 	local msg = {}
-	for _, path in ipairs(package.fusepath_t) do
+	for _, path in ipairs(package.fusepath_t) do -- luacheck: ignore 143
 		msg[#msg + 1] = ("\tno file %q"):format(path:gsub("?", module_path))
 	end
 	return "\n" .. table.concat(msg, "\n")
 end
 
---- Inject `parser.search_for` into the `require()` searchers list.
+--- Inject `compiler.search_for` into the `require()` searchers list.
 -- @treturn boolean False if loader already found
--- @usage parser.inject_loader(); print(require("test_module"))
+-- @usage compiler.inject_loader(); print(require("test_module"))
 -- -- Attempts to load a FusionScript `test_module` package
-function parser.inject_loader()
-	for _, loader in ipairs(package.loaders or package.searchers) do
-		if loader == parser.search_for then
+function compiler.inject_loader()
+	for _, loader in ipairs(package.loaders or package.searchers) do -- luacheck: ignore 143
+		if loader == compiler.search_for then
 			return false
 		end
 	end
-	table.insert(package.loaders or package.searchers, 2, parser.search_for)
+	table.insert(package.loaders or package.searchers, compiler.search_for) -- luacheck: ignore 143
 	return true
 end
 
-if not package.fusepath then
+if not package.fusepath then -- luacheck: ignore 143
 	local paths = {}
 	for path in package.path:gmatch("[^;]+") do
 		local match = path:match("^(.+)%.lua$")
@@ -701,8 +800,16 @@ if not package.fusepath then
 			paths[#paths + 1] = match .. ".fuse"
 		end
 	end
-	package.fusepath = table.concat(paths, ";")
-	package.fusepath_t = paths
+	package.fusepath = table.concat(paths, ";") -- luacheck: ignore 142
+	package.fusepath_t = paths -- luacheck: ignore 142
 end
 
-return parser
+--- Inject some global variables into the runtime. The `fusion-source` program
+-- does this already.
+function compiler.inject_extensions()
+	for name, module in pairs(compiler.extensions) do
+		_G[name] = require(module)
+	end
+end
+
+return compiler

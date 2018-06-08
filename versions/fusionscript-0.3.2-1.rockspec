@@ -1,5 +1,5 @@
 package = "fusionscript"
-version = "dev-1"
+version = "0.3.2-1"
 
 source = {
 	url = "git://github.com/RyanSquared/fusionscript.git";
@@ -16,8 +16,6 @@ dependencies = {
 	"lpeg >= 1.0";
 	"luafilesystem";
 	"serpent";
-	"luaossl";
-	"basexx";
 }
 
 local default = "source"
@@ -25,7 +23,9 @@ local default = "source"
 build = {
 	type = "builtin";
 	modules = {
+		["fusion.stdlib.functional"] = "fusion/stdlib/functional.lua";
 		["fusion.stdlib.table"] = "fusion/stdlib/table.lua";
+		["fusion.stdlib.iterable"] = "fusion/stdlib/iterable.lua";
 		["fusion.stdlib.ternary"] = "fusion/stdlib/ternary.lua";
 		["fusion.stdlib.class"] = "fusion/stdlib/class.lua";
 		["fusion.core.compilers.source"] = "fusion/core/compilers/source.lua";
@@ -41,6 +41,6 @@ build = {
 			["fusionc"] = ("bin/compiler/%s.lua"):format(default);
 			["fusion-source"] = "bin/interpreter//source.lua";
 			["fusionc-source"] = "bin/compiler/source.lua";
-		};
+		}
 	};
 }

@@ -32,6 +32,7 @@
 
 <h2>Contents</h2>
 <ul>
+<li><a href="#What_is_FusionScript_">What is FusionScript? </a></li>
 <li><a href="#Commands">Commands </a></li>
 <li><a href="#Examples">Examples </a></li>
 </ul>
@@ -44,18 +45,18 @@
 </ul>
 <h2>Modules</h2>
 <ul class="nowrap">
-  <li><a href="../modules/fusion.core.lexer.html">fusion.core.lexer</a></li>
-  <li><a href="../modules/fusion.core.parsers.source.html">fusion.core.parsers.source</a></li>
+  <li><a href="../modules/fusion.core.compilers.source.html">fusion.core.compilers.source</a></li>
+  <li><a href="../modules/fusion.core.parser.html">fusion.core.parser</a></li>
   <li><a href="../modules/fusion.stdlib.class.html">fusion.stdlib.class</a></li>
-  <li><a href="../modules/fusion.stdlib.functional.html">fusion.stdlib.functional</a></li>
-  <li><a href="../modules/fusion.stdlib.iterative.html">fusion.stdlib.iterative</a></li>
   <li><a href="../modules/fusion.stdlib.ternary.html">fusion.stdlib.ternary</a></li>
+  <li><a href="../modules/fusion.util.html">fusion.util</a></li>
 </ul>
 <h2>Programs</h2>
 <ul class="nowrap">
   <li><a href="../programs/fusionc-source.html">fusionc-source</a></li>
   <li><a href="../programs/fusion-source.html">fusion-source</a></li>
   <li><a href="../programs/fusion-ast.html">fusion-ast</a></li>
+  <li><a href="../programs/fusion-lint.html">fusion-lint</a></li>
   <li><a href="../programs/fusion-pkg.html">fusion-pkg</a></li>
 </ul>
 
@@ -64,13 +65,80 @@
 <div id="content">
 
 
-<h1>FusionScript <a href="https://travis-ci.org/RyanSquared/FusionScript"><img src="https://travis-ci.org/RyanSquared/FusionScript.svg?branch=master" alt="Build Status"/></a></h1>
+<h1>FusionScript <a href="https://travis-ci.org/RyanSquared/fusionscript"><img src="https://travis-ci.org/RyanSquared/fusionscript.svg?branch=master" alt="Build Status"/></a></h1>
 <p>The programming language of ultimate dankliness</p>
 
-<p><strong>Warning:</strong> This project is very recently released and possibly has many bugs.
-If your code does not compile, it is <em>very</em> likely a problem in the compiler
-instead of your code. Please feel free to add an issue if any errors arise that
-you believe were caused by the compiler.</p>
+<p><strong>Note:</strong> I will no longer be actively working on FusionScript. I have decided
+that I should make better use of my time instead of working on a proof of
+concept that I don't expect anyone to use. The code will remain available but
+will most likely not be updated for future versions of Lua and new features
+will not be added.</p>
+
+<p><strong>Warning:</strong> This project is very unstable and possibly has many bugs.  If your
+code does not compile, it is <em>very</em> likely a problem in the compiler or a
+change in the language instead of your code. Please feel free to add an issue
+if any errors arise that you believe were caused by the compiler.</p>
+
+<p><a name="What_is_FusionScript_"></a></p>
+<h2>What is FusionScript?</h2>
+
+<p>FusionScript is a language that runs on the Lua runtime (currently, by
+transpiling to Lua and then using a Lua interpreter) inspired by C++, Python,
+and Lua. Eventually, FusionScript will compile to a modified Lua 5.3 bytecode
+and run on a modified Lua VM.</p>
+
+<p>FusionScript offers an improved runtime type checking system (that
+checks between both native Lua types, as well as instances of a class) by using
+the <a href="/RyanSquared/stdlib">standard library</a>'s <code>assert.is()</code> method. Eventually,
+runtime type checking may be implemented using syntax similar to Pythonic type
+hints and checked using bytecode instructions.</p>
+
+<p>FusionScript also has a class system, with the ability to inherit values from a
+superclass as well as an "interface" system that when used (see below) will
+ensure that classes implement certain methods. Below is an example that closely
+mirrors the standard library's scope module:</p>
+
+
+<pre>
+interface IScope { descope; with; }
+class Scope {
+    with(fn)=&gt; {
+        fn(self);
+    }
+}
+
+<span class="comment">-- Example:
+</span>
+<span class="keyword">local</span> lfs = <span class="global">require</span>(<span class="string">"lfs"</span>);
+
+class UseDir extends Scope implements IScope {
+    descope()=&gt; lfs.chdir(@old_dir);
+    __init(directory)=&gt; {
+        @old_dir = lfs.currentdir();
+        @dir = directory;
+        lfs.chdir(directory);
+    }
+}
+
+UseDir(<span class="string">"/tmp"</span>):with(\=&gt; {
+    File(<span class="string">"thing.txt"</span>):with(\file-&gt; {
+        file:write(<span class="string">"Hello World!\n"</span>);
+    });
+});
+</pre>
+
+
+<p>There is also implemented an easier way to use generators / iterators using the
+<code>async</code> and <code>yield</code> functions:</p>
+
+<pre><code> async gen_numbers(low = 1, high)-&gt;
+    for (i=low, high)
+        yield i;
+
+ for (number in gen_numbers(1, 10))
+    print(number);
+</code></pre>
+
 
 <p><a name="Commands"></a></p>
 <h2>Commands</h2>
@@ -116,12 +184,17 @@ edit the global state and only remain in the <a href="https://www.lua.org/manual
 <p>There are two command line flags that can be used with the <a href="../programs/fusion-source.html#">fusion-source</a>
 program:</p>
 
-<p>**<code>-m</code>** - Load the <code>main</code> module of the supplied <a href="https://www.lua.org/manual/5.3/manual.html#6.3">package</a> argument and exit.
-This is somewhat similar to the Python <code>-m</code> flag.</p>
+<p>**<code>--package</code>** - Load the <code>main</code> module of the supplied <a href="https://www.lua.org/manual/5.3/manual.html#6.3">package</a> argument and
+exit. This is somewhat similar to the Python <code>-m</code> flag.</p>
 
 <p>**<code>--metadata</code>** - Load the <code>metadata</code> module of the supplied <a href="https://www.lua.org/manual/5.3/manual.html#6.3">package</a>
 argument and print out the compatible information. Acceptable fields are
 documented <a href="https://github.com/ChickenNuggers/FusionScript/wiki/Modules">here</a>.</p>
+
+<p>The <a href="../programs/fusion-source.html#">fusion-source</a> interpreter also makes it so the <code>using</code> keyword isn't
+required for loading syntax extensions. If the target audience for a script is
+intended to not use <a href="../programs/fusionc-source.html#">fusionc-source</a> to compile to Lua, it is suggested to not
+use the <code>using</code> keyword.</p>
 
 <h3><code>fusionc</code>: Compile FusionScript</h3>
 
@@ -192,46 +265,6 @@ printed to the standard output, which is <code>-p</code>.</p>
 </code></pre>
 
 
-<h3>Asynchronous Networking</h3>
-
-<pre><code> -- ::TODO::
- -- The example in this code example is just for testing
- -- and will not actually run as of 9/9/2016
-
- local {Async} = require("core.async");
- local {TCPSocket, TCPServer} = require("core.async.net");
-
-
- -- The server MUST be started before the asynchronization
- -- due to the fact the client can attempt connecting before
- -- the server is initialized.
-
- server = TCPServer("localhost", 9999);
-
- class ExampleAsyncApp extends Async {
-     client()-&gt; {
-         socket = TCPSocket("localhost", 9999);
-         socket:send("echo");
-         print((== socket:recv(4) "echo"));
-         socket:close();
-     }
-
-     server()-&gt; {
-         local client = server:accept();
-         local input = client:recv(1024);
-         client:send(input);
-         client:close();
-         server:close();
-     }
-
-     handler(errorMessage)=&gt;
-         error(errorMessage);
- }
-
- ExampleAsyncApp:run();
-</code></pre>
-
-
 <h3>Building</h3>
 
 
@@ -245,7 +278,7 @@ luarocks make <span class="comment">--local</span>
 </div> <!-- id="main" -->
 <div id="about">
 <i>generated by <a href="http://github.com/stevedonovan/LDoc">LDoc 1.4.6</a></i>
-<i style="float:right;">Last updated 2017-02-01 00:12:28 </i>
+<i style="float:right;">Last updated 2017-07-20 19:05:11 </i>
 </div> <!-- id="about" -->
 </div> <!-- id="container" -->
 </body>

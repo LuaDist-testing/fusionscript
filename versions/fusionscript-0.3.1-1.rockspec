@@ -1,17 +1,9 @@
--- This file was automatically generated for the LuaDist project.
-
 package = "fusionscript"
-version = "0.2.2-1"
+version = "0.3.1-1"
 
--- LuaDist source
 source = {
-  tag = "0.2.2-1",
-  url = "git://github.com/LuaDist-testing/fusionscript.git"
+	url = "git://github.com/RyanSquared/fusionscript.git"
 }
--- Original source
--- source = {
--- 	url = "git://github.com/ChickenNuggers/FusionScript.git"
--- }
 
 description = {
 	summary = "A Lua compilable language based on C and Python",
@@ -22,7 +14,9 @@ description = {
 dependencies = {
 	"lua >= 5.1",
 	"lpeg >= 1.0",
-	"luafilesystem"
+	"luafilesystem",
+	"serpent",
+	"argparse"
 }
 
 local default = "source"
@@ -35,8 +29,8 @@ build = {
 		["fusion.stdlib.iterable"] = "fusion/stdlib/iterable.lua";
 		["fusion.stdlib.ternary"] = "fusion/stdlib/ternary.lua";
 		["fusion.stdlib.class"] = "fusion/stdlib/class.lua";
-		["fusion.core.parsers.source"] = "fusion/core/parsers/source.lua";
-		["fusion.core.lexer"] = "fusion/core/lexer.lua";
+		["fusion.core.compilers.source"] = "fusion/core/compilers/source.lua";
+		["fusion.core.parser"] = "fusion/core/parser.lua";
 	},
 	install = {
 		bin = {
