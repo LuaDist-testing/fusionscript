@@ -1,11 +1,11 @@
 -- This file was automatically generated for the LuaDist project.
 
 package = "fusionscript"
-version = "0.3.0-1"
+version = "0.3.1-1"
 
 -- LuaDist source
 source = {
-  tag = "0.3.0-1",
+  tag = "0.3.1-1",
   url = "git://github.com/LuaDist-testing/fusionscript.git"
 }
 -- Original source
@@ -22,7 +22,9 @@ description = {
 dependencies = {
 	"lua >= 5.1",
 	"lpeg >= 1.0",
-	"luafilesystem"
+	"luafilesystem",
+	"serpent",
+	"argparse"
 }
 
 local default = "source"
