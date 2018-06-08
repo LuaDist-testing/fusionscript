@@ -9,6 +9,14 @@ Example = class({
 	print = (function(self)
 		print(self.a)
 	end);
+	test = (function(self)
+		return coroutine.wrap(function()
+			self:print()
+			for i in itr.range(1, 10) do
+				coroutine.yield(i)
+			end
+		end)
+	end);
 }, {}, "Example")
 a = Example()
 b = Example(15)

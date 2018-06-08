@@ -35,7 +35,7 @@ defs.err = function(pos, char, ctx)
 	local errormsg_table = {
 		"SyntaxError";
 		("Unexpected character on line %d"):format(line);
-		("Token: %s"):format(char);
+		("Token: %s"):format(current_file:match("%w+", pos) or char);
 		("Input: >> %q <<"):format(input);
 		ctx
 	}
@@ -135,7 +135,7 @@ local pattern = re.compile([[
 		function_definition /
 		{| {:type: '' -> 'class_field' :}
 			(
-				'[' ws {:name: expression / r :} ws ']' ws ('=' / r) ws (expression
+				'[' ws {:index: expression / r :} ws ']' ws ('=' / r) ws (expression
 				/ r) ws (';' / r)
 				/ {:name: name / r :} ws ('=' / r) ws (expression / r) ws (';' / r)
 			)
@@ -151,10 +151,11 @@ local pattern = re.compile([[
 	lambda <- {| {:type: '' -> 'lambda' :}
 		'\' ws lambda_args? ws is_self '>' ws (statement / expression_list / r)
 	|}
-	lambda_args <- {| lambda_arg (ws ',' ws lambda_arg)? |}
-	lambda_arg <- {| {:name: name :} |}
+	lambda_args <- {| lambda_arg (ws ',' ws lambda_arg)* |}
+	lambda_arg <- {| {:name: name / '...' :} |}
 	function_definition <- {| {:type: '' -> 'function_definition' :}
-		{:is_async: 'async' -> true space :}? ws
+		{:is_async: 'async' -> true space :}?
+		{:is_local: 'local' -> true space :}? ws
 		variable ws function_body -- Do NOT write functions with :
 	|}
 	function_body <-
@@ -195,7 +196,8 @@ local pattern = re.compile([[
 		(ws 'else' ws {:else: rstatement :})?
 	|}
 
-	function_call <- {| {:type: '' -> 'function_call' :} (
+	function_call <- {| {:type: '' -> 'function_call' :}
+		((& '@') {:is_method: '' -> true :})? (
 		(variable / literal) ({:has_self: ':' {name / r} :} ws
 		{:index_class: ws '<' ws {expression} ws '>' :}? )?
 		) ws '(' ws function_call_body? ws ')'

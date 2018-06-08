@@ -11,6 +11,8 @@
 local parser = require("fusion.core.parsers.source")
 parser.inject_loader()
 
+_G.parser = parser
+
 local arg_index = 1
 while arg_index <= #arg do
 	if arg[arg_index] == "--metadata" then -- return metadata from module
@@ -19,7 +21,7 @@ while arg_index <= #arg do
 			".metadata")
 		if not ok then
 			error("Could not find module metadata for package: " ..
-				arg[arg_index + 1])
+				arg[arg_index + 1] .. "\n" .. module)
 		else
 			local function check(name)
 				assert(module[name], "Missing field: " .. name)
