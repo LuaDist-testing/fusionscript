@@ -213,7 +213,7 @@ describe("lexer", function()
 			{type = "variable", "func"},
 			generator = {
 				{type = "variable", "b"},
-				expression_list = {{type = "variable", "a"}}
+				variable_list = {{type = "variable", "a"}}
 			}
 		}})
 	end)
@@ -374,7 +374,7 @@ describe("lexer", function()
 		})
 	end)
 	it("can parse lambda definitions", function()
-		assert.same(lexer:match("a = ()-> 'hi';"), {{type = "assignment",
+		assert.same(lexer:match("a = \\-> 'hi';"), {{type = "assignment",
 			variable_list = {{type = "variable", "a"}},
 			expression_list = {{type = "lambda",
 				expression_list = {{type = "sqstring", "hi"}}
@@ -403,7 +403,7 @@ describe("lexer", function()
 		})
 	end)
 	it("can parse lambda method definitions", function()
-		assert.same(lexer:match("a = ()=> 'hi';"), {{type = "assignment",
+		assert.same(lexer:match("a = \\=> 'hi';"), {{type = "assignment",
 			variable_list = {{type = "variable", "a"}},
 			expression_list = {{type = "lambda",
 				expression_list = {{type = "sqstring", "hi"}},
@@ -500,7 +500,7 @@ describe("lexer", function()
 			name = {type = "variable", "x"},
 		}})
 	end)
-	it("can parse classes with dynamically named values", function()
+	it("can parse classes with statically named values", function()
 		assert.same(lexer:match("class x { y = z; }"), {{type = "class",
 			{
 				{type = "class_field", {type = "variable", "z"}, name = "y"}
@@ -513,7 +513,7 @@ describe("lexer", function()
 			{
 				{type = "class_field",
 				{type = "variable", "z"},
-				name = {type = "variable", "y"}}
+				index = {type = "variable", "y"}}
 			},
 			name = {type = "variable", "x"},
 		}})

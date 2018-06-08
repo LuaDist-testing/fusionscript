@@ -33,6 +33,8 @@ a_3()-> {
 	return b;
 }
 
+local a_4()-> b
+
 -- asynchronous function definitions
 
 async x()->
@@ -44,11 +46,11 @@ abcd.ef()=> {
 
 }
 
-x = ()-> {
+x = \-> {
 	return y;
 };
 
-y = ()-> z;
+y = \-> z;
 
 a[b]()-> {
 
