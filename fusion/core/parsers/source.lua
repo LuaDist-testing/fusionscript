@@ -95,7 +95,6 @@ function parser:transform_class_function(node)
 			type = "lambda",
 			expression_list = node[1].expression_list;
 			is_self = node.is_self;
-			is_async = node.is_async;
 		}
 	}
 end
@@ -321,11 +320,7 @@ handlers['function_definition'] = function(self, node)
 	local output = {}
 	local header = {}
 	if is_interpretable_raw then
-		if node.is_local then
-			header[1] = ("local function %s("):format(name)
-		else
-			header[1] = ("function %s("):format(name)
-		end
+		header[1] = ("function %s("):format(name)
 	else
 		header[1] = ("%s = function("):format(name)
 	end
@@ -400,22 +395,10 @@ handlers['lambda'] = function(self, node)
 		output[#output + 1] = self:l"\treturn " ..
 			self:transform_expression_list(node)
 	else
-		if node.is_async then
-			-- wrap block in `return coroutine.wrap(function()`
-			self.indent = self.indent + 1
-			output[#output + 1] = self:l"return coroutine.wrap(function()"
-		end
 		if node[#node].type == "block" then
 			output[#output + 1] = handlers['block'](self, node[#node], true)
 		else
-			self.indent = self.indent + 1
-			output[#output + 1] = self:l(self:transform(node[#node]))
-			self.indent = self.indent - 1
-		end
-		if node.is_async then
-			-- wrap block in `return coroutine.wrap(function()`
-			output[#output + 1] = self:l"end)"
-			self.indent = self.indent - 1
+			output[#output + 1] = self:l("\t" .. self:transform(node[#node]))
 		end
 	end
 	output[#output + 1] = self:l"end)"
@@ -557,8 +540,6 @@ handlers['function_call'] = function(self, node)
 			else
 				name = self:transform(node[1]) .. ":" .. node.has_self
 			end
-		elseif #node[1] == 2 and node.is_method then
-			name = node[1][1] .. ":" .. node[1][2]
 		else
 			name = self:transform(node[1])
 		end

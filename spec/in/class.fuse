@@ -7,11 +7,6 @@ class Example {
 		@a = a;
 	print()=>
 		print(@a);
-	async test()=> {
-		@print();
-		for (i in 1::10)
-			yield i;
-	}
 }
 
 a = Example();

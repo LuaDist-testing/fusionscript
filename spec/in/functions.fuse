@@ -33,8 +33,6 @@ a_3()-> {
 	return b;
 }
 
-local a_4()-> b
-
 -- asynchronous function definitions
 
 async x()->
